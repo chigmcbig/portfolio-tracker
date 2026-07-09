@@ -4,7 +4,7 @@
   "description": "Trading Platform Pro - Manual Trader, AI Auto-Investor, Game Mode",
   "private": true,
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "vercel dev",
