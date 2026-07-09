@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Platform Pro v1.0</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.10.3/Recharts.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+const { useState, useEffect } = React;
+const { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.recharts;
+
+const STOCKS = [
+  { ticker: "AAPL", name: "Apple", sector: "Tech", basePrice: 150 },
+  { ticker: "MSFT", name: "Microsoft", sector: "Tech", basePrice: 280 },
+  { ticker: "NVDA", name: "NVIDIA", sector: "Tech", basePrice: 140 },
+  { ticker: "GOOGL", name: "Google", sector: "Tech", basePrice: 120 },
+  { ticker: "AMZN", name: "Amazon", sector: "Consumer", basePrice: 160 },
+  { ticker: "TSLA", name: "Tesla", sector: "Auto", basePrice: 200 },
+  { ticker: "META", name: "Meta", sector: "Tech", basePrice: 250 },
+  { ticker: "JPM", name: "JPMorgan", sector: "Finance", basePrice: 180 },
+  { ticker: "V", name: "Visa", sector: "Finance", basePrice: 220 },
+  { ticker: "WMT", name: "Walmart", sector: "Retail", basePrice: 85 },
+];
+
+const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
+
+const LESSONS = [
+  { title: "Reading Candlesticks", content: "Green candle = price up. Red = down. Upper wick = daily high. Lower wick = daily low. Body = open to close. Pattern recognition is key to timing entries & exits." },
+  { title: "What is RSI?", content: "RSI (0-100) shows momentum. >70 = overbought (potential selloff). <30 = oversold (potential bounce). 50 = neutral. Useful for finding reversal points when combined with other signals." },
+  { title: "Moving Averages", content: "MA smooths out noise. 20-day = short-term trend. 50-day = medium-term. When fast MA crosses above slow MA = bullish (golden cross). Below = bearish (death cross)." },
+  { title: "When to Sell", content: "Hardest skill! Sell when: profit target reached, stop loss hit, thesis broken, or too concentrated. Don't fall in love with positions. Stick to your rules." },
+  { title: "Risk Management", content: "Never risk >2% per trade. Calculate position size = (account × 2%) / (entry - stop). Compounding small wins beats one big loss. Discipline beats conviction." },
+  { title: "Emotions & Trading", content: "Fear sells winners early. Greed holds losers too long. FOMO buys at tops. Revenge trading after losses. Journal your trades to spot patterns." },
+];
+
+function generateHistoricalData(startPrice, days) {
+  const data = [startPrice];
+  let price = startPrice;
+  for (let i = 1; i < days; i++) {
+    const change = (Math.random() - 0.48) * startPrice * 0.05;
+    price = Math.max(startPrice * 0.5, price + change);
+    data.push(price);
+  }
+  return data;
+}
+
+function Toast({ message, type, onClose }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+  const bgColor = type === "success" ? "#10b981" : type === "error" ? "#ef4444" : "#3b82f6";
+  return (
+    <div style={{ position: "fixed", bottom: "20px", right: "20px", background: bgColor, color: "white", padding: "16px 20px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, zIndex: 9999 }}>
+      {message}
+    </div>
+  );
+}
+
+function TradingPlatform() {
+  const [masterTab, setMasterTab] = useState("dashboard");
+  const [toast, setToast] = useState(null);
+
+  // Manual Trader
+  const [manualCash, setManualCash] = useState(() => JSON.parse(localStorage.getItem("manualCash") || "10000"));
+  const [manualPositions, setManualPositions] = useState(() => JSON.parse(localStorage.getItem("manualPositions") || "[]"));
+  const [manualTrades, setManualTrades] = useState(() => JSON.parse(localStorage.getItem("manualTrades") || "[]"));
+  const [manualPrices, setManualPrices] = useState(() => {
+    const prices = {};
+    STOCKS.forEach(s => prices[s.ticker] = s.basePrice * (0.95 + Math.random() * 0.1));
+    return prices;
+  });
+
+  // AI Trader
+  const [aiCash, setAiCash] = useState(() => JSON.parse(localStorage.getItem("aiCash") || "50000"));
+  const [aiPositions, setAiPositions] = useState(() => JSON.parse(localStorage.getItem("aiPositions") || "[]"));
+  const [aiInitialized, setAiInitialized] = useState(() => JSON.parse(localStorage.getItem("aiInitialized") || "false"));
+
+  // Game Mode
+  const [gameStarted, setGameStarted] = useState(() => JSON.parse(localStorage.getItem("gameStarted") || "false"));
+  const [gameDay, setGameDay] = useState(() => JSON.parse(localStorage.getItem("gameDay") || "0"));
+  const [gameCash, setGameCash] = useState(() => JSON.parse(localStorage.getItem("gameCash") || "10000"));
+  const [gamePositions, setGamePositions] = useState(() => JSON.parse(localStorage.getItem("gamePositions") || "[]"));
+  const [gameTrades, setGameTrades] = useState(() => JSON.parse(localStorage.getItem("gameTrades") || "[]"));
+  const [gameHistory, setGameHistory] = useState(() => {
+    const saved = localStorage.getItem("gameHistory");
+    if (saved) return JSON.parse(saved);
+    const history = {};
+    STOCKS.forEach(s => history[s.ticker] = generateHistoricalData(s.basePrice, 90));
+    return history;
+  });
+  const [gameChartData, setGameChartData] = useState(() => JSON.parse(localStorage.getItem("gameChartData") || "[]"));
+
+  // Watchlist & Calculator
+  const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem("watchlist") || "[]"));
+  const [calcEntry, setCalcEntry] = useState("");
+  const [calcStop, setCalcStop] = useState("");
+  const [calcAccount, setCalcAccount] = useState("10000");
+
+  // UI State
+  const [manualBuyTicker, setManualBuyTicker] = useState("");
+  const [manualBuyShares, setManualBuyShares] = useState("");
+  const [manualSellId, setManualSellId] = useState("");
+  const [manualSellShares, setManualSellShares] = useState("");
+  const [gameBuyTicker, setGameBuyTicker] = useState("");
+  const [gameBuyShares, setGameBuyShares] = useState("");
+  const [gameSellId, setGameSellId] = useState("");
+  const [gameSellShares, setGameSellShares] = useState("");
+  const [selectedLesson, setSelectedLesson] = useState(null);
+
+  // Persist
+  useEffect(() => {
+    localStorage.setItem("manualCash", JSON.stringify(manualCash));
+    localStorage.setItem("manualPositions", JSON.stringify(manualPositions));
+    localStorage.setItem("manualTrades", JSON.stringify(manualTrades));
+    localStorage.setItem("aiCash", JSON.stringify(aiCash));
+    localStorage.setItem("aiPositions", JSON.stringify(aiPositions));
+    localStorage.setItem("aiInitialized", JSON.stringify(aiInitialized));
+    localStorage.setItem("gameStarted", JSON.stringify(gameStarted));
+    localStorage.setItem("gameDay", JSON.stringify(gameDay));
+    localStorage.setItem("gameCash", JSON.stringify(gameCash));
+    localStorage.setItem("gamePositions", JSON.stringify(gamePositions));
+    localStorage.setItem("gameTrades", JSON.stringify(gameTrades));
+    localStorage.setItem("gameHistory", JSON.stringify(gameHistory));
+    localStorage.setItem("gameChartData", JSON.stringify(gameChartData));
+    localStorage.setItem("watchlist", JSON.stringify(watchlist));
+  }, [manualCash, manualPositions, manualTrades, aiCash, aiPositions, aiInitialized, gameStarted, gameDay, gameCash, gamePositions, gameTrades, gameHistory, gameChartData, watchlist]);
+
+  // Init AI
+  useEffect(() => {
+    if (!aiInitialized && aiPositions.length === 0) {
+      const topStocks = STOCKS.slice(0, 5);
+      const newPositions = [];
+      let newCash = 50000;
+      topStocks.forEach(stock => {
+        const price = manualPrices[stock.ticker] || stock.basePrice;
+        const shares = Math.floor((50000 / 5) / price);
+        newPositions.push({ id: Date.now() + Math.random(), ticker: stock.ticker, shares, buyPrice: price, currentPrice: price });
+        newCash -= shares * price;
+      });
+      setAiPositions(newPositions);
+      setAiCash(newCash);
+      setAiInitialized(true);
+    }
+  }, []);
+
+  // Update prices
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setManualPrices(prev => {
+        const newPrices = { ...prev };
+        STOCKS.forEach(s => {
+          const change = (Math.random() - 0.5) * prev[s.ticker] * 0.02;
+          newPrices[s.ticker] = Math.max(prev[s.ticker] * 0.5, prev[s.ticker] + change);
+        });
+        return newPrices;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setManualPositions(prev => prev.map(p => ({ ...p, currentPrice: manualPrices[p.ticker] || p.currentPrice })));
+    setAiPositions(prev => prev.map(p => ({ ...p, currentPrice: manualPrices[p.ticker] || p.currentPrice })));
+  }, [manualPrices]);
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+  };
+
+  const manualPortfolioValue = manualPositions.reduce((sum, p) => sum + (p.currentPrice * p.shares), 0);
+  const manualTotal = manualPortfolioValue + manualCash;
+  const manualGain = manualTotal - 10000;
+  const manualGainPercent = (manualGain / 10000) * 100;
+
+  const aiPortfolioValue = aiPositions.reduce((sum, p) => sum + (p.currentPrice * p.shares), 0);
+  const aiTotal = aiPortfolioValue + aiCash;
+  const aiGain = aiTotal - 50000;
+  const aiGainPercent = (aiGain / 50000) * 100;
+
+  const gamePortfolioValue = gamePositions.reduce((sum, p) => sum + (p.currentPrice * p.shares), 0);
+  const gameTotal = gamePortfolioValue + gameCash;
+  const gameGain = gameTotal - 10000;
+  const gameGainPercent = (gameGain / 10000) * 100;
+
+  function getSectorBreakdown(positions) {
+    const breakdown = {};
+    positions.forEach(p => {
+      const stock = STOCKS.find(s => s.ticker === p.ticker);
+      const sector = stock?.sector || "Other";
+      breakdown[sector] = (breakdown[sector] || 0) + (p.currentPrice * p.shares);
+    });
+    return Object.entries(breakdown).map(([name, value]) => ({ name, value }));
+  }
+
+  function getConcentrationRisk(positions, totalValue) {
+    const risks = [];
+    positions.forEach(p => {
+      const percentage = (p.currentPrice * p.shares) / totalValue * 100;
+      if (percentage > 20) risks.push({ ticker: p.ticker, percentage });
+    });
+    return risks;
+  }
+
+  function getTradeAnalytics(trades) {
+    const sellTrades = trades.filter(t => t.action === "SELL");
+    const winningTrades = sellTrades.filter(t => t.gainLoss > 0);
+    const winRate = sellTrades.length > 0 ? (winningTrades.length / sellTrades.length * 100).toFixed(1) : 0;
+    const bestTrade = sellTrades.length > 0 ? Math.max(...sellTrades.map(t => t.gainLoss || 0)).toFixed(2) : 0;
+    const worstTrade = sellTrades.length > 0 ? Math.min(...sellTrades.map(t => t.gainLoss || 0)).toFixed(2) : 0;
+    return { winRate, bestTrade, worstTrade };
+  }
+
+  function buyManualStock() {
+    if (!manualBuyTicker) { showToast("Select a stock", "error"); return; }
+    if (!manualBuyShares || parseFloat(manualBuyShares) <= 0) { showToast("Enter valid shares", "error"); return; }
+    const shares = parseFloat(manualBuyShares);
+    const price = manualPrices[manualBuyTicker] || 100;
+    const cost = shares * price;
+    if (cost > manualCash) { showToast("Not enough cash", "error"); return; }
+    const risks = getConcentrationRisk([...manualPositions, { ticker: manualBuyTicker, currentPrice: price, shares }], manualTotal + cost);
+    if (risks.length > 0) showToast(`⚠ ${risks[0].ticker} will be ${risks[0].percentage.toFixed(1)}%`, "warning");
+    const existing = manualPositions.find(p => p.ticker === manualBuyTicker);
+    if (existing) {
+      setManualPositions(manualPositions.map(p => p.ticker === manualBuyTicker ? { ...p, shares: p.shares + shares, currentPrice: price } : p));
+    } else {
+      setManualPositions([...manualPositions, { id: Date.now(), ticker: manualBuyTicker, shares, buyPrice: price, currentPrice: price }]);
+    }
+    setManualCash(manualCash - cost);
+    setManualTrades([...manualTrades, { id: Date.now(), action: "BUY", ticker: manualBuyTicker, shares, price, gainLoss: 0, date: new Date().toLocaleDateString() }]);
+    showToast(`✓ Bought ${shares} ${manualBuyTicker} for £${cost.toFixed(2)}`);
+    setManualBuyTicker("");
+    setManualBuyShares("");
+  }
+
+  function sellManualStock() {
+    if (!manualSellId) { showToast("Select a position", "error"); return; }
+    if (!manualSellShares || parseFloat(manualSellShares) <= 0) { showToast("Enter valid shares", "error"); return; }
+    const position = manualPositions.find(p => p.id === parseInt(manualSellId));
+    if (!position) { showToast("Position not found", "error"); return; }
+    const shares = parseFloat(manualSellShares);
+    if (shares > position.shares) { showToast(`Only ${position.shares} available`, "error"); return; }
+    const proceeds = shares * position.currentPrice;
+    const gainLoss = (position.currentPrice - position.buyPrice) * shares;
+    if (shares === position.shares) {
+      setManualPositions(manualPositions.filter(p => p.id !== parseInt(manualSellId)));
+    } else {
+      setManualPositions(manualPositions.map(p => p.id === parseInt(manualSellId) ? { ...p, shares: p.shares - shares } : p));
+    }
+    setManualCash(manualCash + proceeds);
+    setManualTrades([...manualTrades, { id: Date.now(), action: "SELL", ticker: position.ticker, shares, price: position.currentPrice, gainLoss, date: new Date().toLocaleDateString() }]);
+    const emoji = gainLoss > 0 ? "✓" : "✗";
+    showToast(`${emoji} Sold ${shares} ${position.ticker} for £${proceeds.toFixed(2)}`);
+    setManualSellId("");
+    setManualSellShares("");
+  }
+
+  function buyGameStock() {
+    if (!gameBuyTicker) { showToast("Select a stock", "error"); return; }
+    if (!gameBuyShares || parseFloat(gameBuyShares) <= 0) { showToast("Enter valid shares", "error"); return; }
+    const shares = parseFloat(gameBuyShares);
+    const price = gameHistory[gameBuyTicker][gameDay];
+    const cost = shares * price;
+    if (cost > gameCash) { showToast("Not enough cash", "error"); return; }
+    const existing = gamePositions.find(p => p.ticker === gameBuyTicker);
+    if (existing) {
+      setGamePositions(gamePositions.map(p => p.ticker === gameBuyTicker ? { ...p, shares: p.shares + shares, currentPrice: price } : p));
+    } else {
+      setGamePositions([...gamePositions, { id: Date.now(), ticker: gameBuyTicker, shares, buyPrice: price, currentPrice: price }]);
+    }
+    setGameCash(gameCash - cost);
+    setGameTrades([...gameTrades, { id: Date.now(), action: "BUY", ticker: gameBuyTicker, shares, price, day: gameDay }]);
+    showToast(`✓ Bought ${shares} ${gameBuyTicker} for £${cost.toFixed(2)}`);
+    setGameBuyTicker("");
+    setGameBuyShares("");
+  }
+
+  function sellGameStock() {
+    if (!gameSellId) { showToast("Select a position", "error"); return; }
+    if (!gameSellShares || parseFloat(gameSellShares) <= 0) { showToast("Enter valid shares", "error"); return; }
+    const position = gamePositions.find(p => p.id === parseInt(gameSellId));
+    if (!position) { showToast("Position not found", "error"); return; }
+    const shares = parseFloat(gameSellShares);
+    if (shares > position.shares) { showToast(`Only ${position.shares} available`, "error"); return; }
+    const proceeds = shares * position.currentPrice;
+    const gainLoss = (position.currentPrice - position.buyPrice) * shares;
+    if (shares === position.shares) {
+      setGamePositions(gamePositions.filter(p => p.id !== parseInt(gameSellId)));
+    } else {
+      setGamePositions(gamePositions.map(p => p.id === parseInt(gameSellId) ? { ...p, shares: p.shares - shares } : p));
+    }
+    setGameCash(gameCash + proceeds);
+    setGameTrades([...gameTrades, { id: Date.now(), action: "SELL", ticker: position.ticker, shares, price: position.currentPrice, gainLoss, day: gameDay }]);
+    const emoji = gainLoss > 0 ? "✓" : "✗";
+    showToast(`${emoji} Sold ${shares} ${position.ticker} for £${proceeds.toFixed(2)}`);
+    setGameSellId("");
+    setGameSellShares("");
+  }
+
+  function advanceGameTime(days) {
+    const newDay = Math.min(gameDay + days, 89);
+    setGameDay(newDay);
+    const updatedPositions = gamePositions.map(p => ({ ...p, currentPrice: gameHistory[p.ticker][newDay] }));
+    setGamePositions(updatedPositions);
+    const portfolioValue = updatedPositions.reduce((sum, p) => sum + (p.currentPrice * p.shares), 0) + gameCash;
+    const newChartData = [...gameChartData];
+    if (!newChartData.find(d => d.day === newDay)) {
+      newChartData.push({ day: newDay, portfolio: portfolioValue });
+    }
+    setGameChartData(newChartData);
+  }
+
+  function toggleWatchlist(ticker) {
+    if (watchlist.includes(ticker)) {
+      setWatchlist(watchlist.filter(t => t !== ticker));
+      showToast(`Removed ${ticker} from watchlist`);
+    } else {
+      setWatchlist([...watchlist, ticker]);
+      showToast(`Added ${ticker} to watchlist`);
+    }
+  }
+
+  const manualSectorData = getSectorBreakdown(manualPositions);
+  const manualRisks = getConcentrationRisk(manualPositions, manualTotal);
+  const manualAnalytics = getTradeAnalytics(manualTrades);
+  const gameAnalytics = getTradeAnalytics(gameTrades);
+  const topGainers = STOCKS.map(s => {
+    const dayStart = Math.max(0, gameDay - 7);
+    const change = gameHistory[s.ticker] ? ((gameHistory[s.ticker][gameDay] - gameHistory[s.ticker][dayStart]) / gameHistory[s.ticker][dayStart]) * 100 : 0;
+    return { ...s, change, price: gameHistory[s.ticker]?.[gameDay] || 150 };
+  }).sort((a, b) => b.change - a.change);
+
+  const positionSize = calcEntry && calcStop && calcAccount ? ((parseFloat(calcAccount) * 0.02) / (parseFloat(calcEntry) - parseFloat(calcStop))).toFixed(0) : 0;
+  const riskAmount = calcEntry && calcStop && calcAccount ? (parseFloat(calcAccount) * 0.02).toFixed(2) : 0;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "sans-serif" }}>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      <div style={{ background: "white", borderBottom: "1px solid #e2e8f0", padding: "16px 0", position: "sticky", top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 20px" }}>
+          <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#1e5c7a", margin: "0 0 12px 0" }}>Trading Platform Pro v1.0</h1>
+          <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid #e2e8f0", paddingBottom: "0", flexWrap: "wrap", overflowX: "auto" }}>
+            {[
+              { id: "dashboard", label: "Dashboard" },
+              { id: "manual", label: "Manual Trader" },
+              { id: "ai", label: "AI Trader" },
+              { id: "game", label: "Game Mode" },
+              { id: "screener", label: "Screener" },
+              { id: "watchlist", label: "Watchlist" },
+              { id: "calculator", label: "Calculator" },
+              { id: "learn", label: "Learn" },
+              { id: "leaderboard", label: "Leaderboard" },
+              { id: "journal", label: "Journal" }
+            ].map(t => (
+              <button key={t.id} onClick={() => setMasterTab(t.id)} style={{ padding: "12px 16px", background: "none", border: "none", borderBottom: masterTab === t.id ? "3px solid #10b981" : "none", color: masterTab === t.id ? "#1e5c7a" : "#64748b", cursor: "pointer", fontSize: "13px", fontWeight: masterTab === t.id ? 600 : 500, whiteSpace: "nowrap" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "20px" }}>
+        {masterTab === "dashboard" && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+              <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "8px" }}>YOUR ACCOUNT</div>
+                <div style={{ fontSize: "28px", fontWeight: 700, color: "#1e5c7a", marginBottom: "4px" }}>£{manualTotal.toFixed(2)}</div>
+                <div style={{ fontSize: "13px", color: manualGain > 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>{manualGain > 0 ? "+" : ""}£{manualGain.toFixed(2)} ({manualGainPercent.toFixed(2)}%)</div>
+              </div>
+
+              <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "8px" }}>🤖 AI TRADER</div>
+                <div style={{ fontSize: "28px", fontWeight: 700, color: "#6366f1", marginBottom: "4px" }}>£{aiTotal.toFixed(2)}</div>
+                <div style={{ fontSize: "13px", color: aiGain > 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>{aiGain > 0 ? "+" : ""}£{aiGain.toFixed(2)} ({aiGainPercent.toFixed(2)}%)</div>
+              </div>
+
+              <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "8px" }}>GAME MODE</div>
+                <div style={{ fontSize: "28px", fontWeight: 700, color: gameStarted ? "#1e5c7a" : "#94a3b8", marginBottom: "4px" }}>£{gameStarted ? gameTotal.toFixed(2) : "—"}</div>
+                {gameStarted && <div style={{ fontSize: "13px", color: gameGain > 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>Day {gameDay}/89</div>}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "20px", marginBottom: "20px" }}>
+              <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e5c7a", marginBottom: "16px" }}>Performance Comparison</div>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={[
+                    { name: "You", value: manualTotal },
+                    { name: "AI", value: aiTotal },
+                    { name: "Game", value: gameStarted ? gameTotal : 0 }
+                  ]}>
+                    <CartesianGrid stroke="#e2e8f0" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip formatter={(v) => `£${v.toFixed(2)}`} />
+                    <Bar dataKey="value" fill="#10b981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {manualSectorData.length > 0 && (
+                <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e5c7a", marginBottom: "16px" }}>Sector Breakdown</div>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie data={manualSectorData} cx="50%" cy="50%" outerRadius={70} fill="#3b82f6" dataKey="value" label>
+                        {manualSectorData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(v) => `£${v.toFixed(2)}`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{ fontSize: "12px", marginTop: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    {manualSectorData.map((s, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ color: COLORS[i % COLORS.length] }}>●</span>
+                        <span>{s.name}: £{s.value.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {masterTab === "manual" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>Buy Stock</div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Stock</label>
+              <select value={manualBuyTicker} onChange={(e) => setManualBuyTicker(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "12px", fontSize: "13px" }}>
+                <option value="">Select stock...</option>
+                {STOCKS.map(s => (<option key={s.ticker} value={s.ticker}>{s.ticker} • £{(manualPrices[s.ticker] || 100).toFixed(2)}</option>))}
+              </select>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Shares</label>
+              <input type="number" placeholder="0" value={manualBuyShares} onChange={(e) => setManualBuyShares(e.target.value)} min="1" style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "12px" }} />
+              {manualBuyTicker && manualBuyShares && (
+                <div style={{ background: "#f0f9ff", padding: "10px", borderRadius: "6px", border: "1px solid #bae6fd", marginBottom: "12px", fontSize: "12px", color: "#0c4a6e" }}>
+                  Cost: £{(parseFloat(manualBuyShares) * (manualPrices[manualBuyTicker] || 100)).toFixed(2)}
+                </div>
+              )}
+              <button onClick={buyManualStock} style={{ width: "100%", padding: "10px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Buy</button>
+              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "12px" }}>Cash: £{manualCash.toFixed(2)}</div>
+            </div>
+
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>Sell Position</div>
+              {manualPositions.length === 0 ? (
+                <div style={{ fontSize: "13px", color: "#94a3b8", padding: "20px", textAlign: "center" }}>No holdings</div>
+              ) : (
+                <>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Position</label>
+                  <select value={manualSellId} onChange={(e) => setManualSellId(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "12px", fontSize: "13px" }}>
+                    <option value="">Select position...</option>
+                    {manualPositions.map(p => (<option key={p.id} value={p.id}>{p.ticker} • {p.shares} @ £{(p.currentPrice || 100).toFixed(2)}</option>))}
+                  </select>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Shares</label>
+                  <input type="number" placeholder="0" value={manualSellShares} onChange={(e) => setManualSellShares(e.target.value)} min="1" style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "12px" }} />
+                  {manualSellId && manualSellShares && (() => {
+                    const pos = manualPositions.find(p => p.id === parseInt(manualSellId));
+                    return pos ? (
+                      <div style={{ background: "#f0f9ff", padding: "10px", borderRadius: "6px", border: "1px solid #bae6fd", marginBottom: "12px", fontSize: "12px", color: "#0c4a6e" }}>
+                        Proceeds: £{(parseFloat(manualSellShares) * (pos.currentPrice || 100)).toFixed(2)}
+                      </div>
+                    ) : null;
+                  })()}
+                  <button onClick={sellManualStock} style={{ width: "100%", padding: "10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Sell</button>
+                </>
+              )}
+            </div>
+
+            {manualRisks.length > 0 && (
+              <div style={{ gridColumn: "1/-1", background: "#fef2f2", padding: "16px", borderRadius: "6px", border: "1px solid #fee2e2" }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "#991b1b", marginBottom: "8px" }}>⚠️ Concentration Warning</div>
+                {manualRisks.map(risk => (
+                  <div key={risk.ticker} style={{ fontSize: "12px", color: "#dc2626" }}>
+                    {risk.ticker}: {risk.percentage.toFixed(1)}% (max recommended: 20%)
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {manualPositions.length > 0 && (
+              <div style={{ gridColumn: "1/-1", background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e5c7a", marginBottom: "12px" }}>Your Holdings</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "12px" }}>
+                  {manualPositions.map(p => (
+                    <div key={p.id} style={{ background: "#f8fafc", padding: "12px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                      <div style={{ fontWeight: 600, color: "#1e5c7a", fontSize: "13px" }}>{p.ticker}</div>
+                      <div style={{ fontSize: "12px", color: "#64748b" }}>{p.shares} @ £{(p.currentPrice || 100).toFixed(2)}</div>
+                      <div style={{ fontSize: "12px", color: (p.currentPrice || 100) - p.buyPrice > 0 ? "#10b981" : "#ef4444", fontWeight: 600, marginTop: "4px" }}>
+                        {((p.currentPrice || 100) - p.buyPrice) > 0 ? "+" : ""}£{(((p.currentPrice || 100) - p.buyPrice) * p.shares).toFixed(2)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {masterTab === "ai" && (
+          <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "#6366f1", marginBottom: "16px" }}>🤖 AI Auto-Trader</div>
+            <div style={{ background: "#f0f9ff", padding: "16px", borderRadius: "6px", border: "1px solid #bae6fd", marginBottom: "20px", fontSize: "13px", color: "#0c4a6e" }}>
+              Auto-invested in top stocks. Return: {aiGainPercent.toFixed(2)}%
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px" }}>
+              {aiPositions.map(p => (
+                <div key={p.id} style={{ background: "#f8fafc", padding: "12px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontWeight: 600, color: "#6366f1" }}>{p.ticker}</div>
+                  <div style={{ fontSize: "12px", color: "#64748b" }}>{p.shares} @ £{(p.currentPrice || 100).toFixed(2)}</div>
+                  <div style={{ fontSize: "12px", color: (p.currentPrice || 100) - p.buyPrice > 0 ? "#10b981" : "#ef4444", fontWeight: 600, marginTop: "4px" }}>
+                    {((p.currentPrice || 100) - p.buyPrice) > 0 ? "+" : ""}£{(((p.currentPrice || 100) - p.buyPrice) * p.shares).toFixed(2)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {masterTab === "game" && (
+          <div>
+            {!gameStarted ? (
+              <div style={{ background: "white", padding: "40px", borderRadius: "8px", border: "1px solid #e2e8f0", textAlign: "center" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1e5c7a", marginBottom: "12px" }}>Start Trading Simulation</h2>
+                <p style={{ color: "#64748b", marginBottom: "24px" }}>Test strategies with £10,000 on 90 days of historical data</p>
+                <button onClick={() => { setGameStarted(true); showToast("Game started!"); }} style={{ padding: "12px 32px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Start Game</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+                  <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>VALUE</div>
+                    <div style={{ fontSize: "22px", fontWeight: 700, color: "#1e5c7a" }}>£{gameTotal.toFixed(2)}</div>
+                  </div>
+                  <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>PROFIT</div>
+                    <div style={{ fontSize: "22px", fontWeight: 700, color: gameGain > 0 ? "#10b981" : "#ef4444" }}>£{gameGain.toFixed(2)}</div>
+                  </div>
+                  <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>WIN RATE</div>
+                    <div style={{ fontSize: "22px", fontWeight: 700, color: "#1e5c7a" }}>{gameAnalytics.winRate}%</div>
+                  </div>
+                  <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>DAY</div>
+                    <div style={{ fontSize: "22px", fontWeight: 700, color: "#1e5c7a" }}>{gameDay}/89</div>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
+                  <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "12px" }}>Buy</div>
+                    <select value={gameBuyTicker} onChange={(e) => setGameBuyTicker(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "8px", fontSize: "13px" }}>
+                      <option value="">Select stock...</option>
+                      {STOCKS.map(s => (<option key={s.ticker} value={s.ticker}>{s.ticker} • £{gameHistory[s.ticker]?.[gameDay].toFixed(2) || "—"}</option>))}
+                    </select>
+                    <input type="number" placeholder="Shares" value={gameBuyShares} onChange={(e) => setGameBuyShares(e.target.value)} min="1" style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "8px" }} />
+                    <button onClick={buyGameStock} style={{ width: "100%", padding: "10px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Buy</button>
+                  </div>
+
+                  <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "12px" }}>Sell</div>
+                    {gamePositions.length === 0 ? (
+                      <div style={{ fontSize: "13px", color: "#94a3b8" }}>No holdings</div>
+                    ) : (
+                      <>
+                        <select value={gameSellId} onChange={(e) => setGameSellId(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "8px", fontSize: "13px" }}>
+                          <option value="">Select position...</option>
+                          {gamePositions.map(p => (<option key={p.id} value={p.id}>{p.ticker} • {p.shares}</option>))}
+                        </select>
+                        <input type="number" placeholder="Shares" value={gameSellShares} onChange={(e) => setGameSellShares(e.target.value)} min="1" style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "8px" }} />
+                        <button onClick={sellGameStock} style={{ width: "100%", padding: "10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Sell</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e5c7a", marginBottom: "12px" }}>Time Controls</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px" }}>
+                    <button onClick={() => advanceGameTime(1)} style={{ padding: "8px", background: "#e0f2fe", color: "#1e5c7a", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>+1 Day</button>
+                    <button onClick={() => advanceGameTime(7)} style={{ padding: "8px", background: "#e0f2fe", color: "#1e5c7a", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>+1 Week</button>
+                    <button onClick={() => advanceGameTime(30)} style={{ padding: "8px", background: "#e0f2fe", color: "#1e5c7a", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>+1 Month</button>
+                    <button onClick={() => advanceGameTime(89 - gameDay)} style={{ padding: "8px", background: "#1e5c7a", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>End</button>
+                  </div>
+                </div>
+
+                {gameChartData.length > 1 && (
+                  <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e5c7a", marginBottom: "12px" }}>Portfolio</div>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={gameChartData}>
+                        <CartesianGrid stroke="#e2e8f0" />
+                        <XAxis dataKey="day" />
+                        <YAxis />
+                        <Tooltip formatter={(v) => `£${v.toFixed(2)}`} />
+                        <Line type="monotone" dataKey="portfolio" stroke="#10b981" strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {gameDay === 89 && (
+              <div style={{ background: "#fef3c7", padding: "20px", borderRadius: "8px", border: "2px solid #fcd34d", marginTop: "20px", textAlign: "center" }}>
+                <div style={{ fontSize: "24px", fontWeight: 700, color: "#92400e" }}>🏁 Game Complete!</div>
+                <div style={{ fontSize: "14px", color: "#b45309", marginTop: "8px" }}>Final Score: £{gameGain.toFixed(2)} ({gameGainPercent.toFixed(2)}%)</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {masterTab === "screener" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#10b981", marginBottom: "16px" }}>📈 Top Gainers</div>
+              {topGainers.slice(0, 5).map(s => (
+                <div key={s.ticker} style={{ background: "#f0fdf4", padding: "12px", borderRadius: "6px", border: "1px solid #dcfce7", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#166534" }}>{s.ticker}</div>
+                    <div style={{ fontSize: "12px", color: "#65a30d" }}>£{s.price.toFixed(2)}</div>
+                  </div>
+                  <button onClick={() => toggleWatchlist(s.ticker)} style={{ padding: "4px 8px", background: watchlist.includes(s.ticker) ? "#ef4444" : "#e0f2fe", color: watchlist.includes(s.ticker) ? "white" : "#1e5c7a", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>
+                    {watchlist.includes(s.ticker) ? "✓" : "+"}
+                  </button>
+                  <div style={{ color: "#10b981", fontWeight: 700 }}>+{s.change.toFixed(2)}%</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#ef4444", marginBottom: "16px" }}>📉 Top Losers</div>
+              {topGainers.slice(-5).reverse().map(s => (
+                <div key={s.ticker} style={{ background: "#fef2f2", padding: "12px", borderRadius: "6px", border: "1px solid #fee2e2", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#991b1b" }}>{s.ticker}</div>
+                    <div style={{ fontSize: "12px", color: "#dc2626" }}>£{s.price.toFixed(2)}</div>
+                  </div>
+                  <button onClick={() => toggleWatchlist(s.ticker)} style={{ padding: "4px 8px", background: watchlist.includes(s.ticker) ? "#ef4444" : "#e0f2fe", color: watchlist.includes(s.ticker) ? "white" : "#1e5c7a", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>
+                    {watchlist.includes(s.ticker) ? "✓" : "+"}
+                  </button>
+                  <div style={{ color: "#ef4444", fontWeight: 700 }}>{s.change.toFixed(2)}%</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {masterTab === "watchlist" && (
+          <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>📌 Watchlist</div>
+            {watchlist.length === 0 ? (
+              <div style={{ color: "#94a3b8", textAlign: "center", padding: "40px", fontSize: "14px" }}>
+                No stocks in watchlist. Add from screener or click the + button.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
+                {watchlist.map(ticker => {
+                  const stock = STOCKS.find(s => s.ticker === ticker);
+                  const price = manualPrices[ticker] || 100;
+                  const dayStart = Math.max(0, gameDay - 7);
+                  const change = gameHistory[ticker] ? ((gameHistory[ticker][gameDay] - gameHistory[ticker][dayStart]) / gameHistory[ticker][dayStart]) * 100 : 0;
+                  return (
+                    <div key={ticker} style={{ background: "#f8fafc", padding: "16px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                      <div style={{ fontWeight: 600, color: "#1e5c7a", fontSize: "14px", marginBottom: "8px" }}>{ticker}</div>
+                      <div style={{ fontSize: "18px", fontWeight: 700, color: "#1e5c7a", marginBottom: "4px" }}>£{price.toFixed(2)}</div>
+                      <div style={{ fontSize: "12px", color: change > 0 ? "#10b981" : "#ef4444", fontWeight: 600, marginBottom: "12px" }}>
+                        {change > 0 ? "+" : ""}{change.toFixed(2)}%
+                      </div>
+                      <button onClick={() => toggleWatchlist(ticker)} style={{ width: "100%", padding: "8px", background: "#ef4444", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>
+                        Remove
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {masterTab === "calculator" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>📊 Position Sizing Calculator</div>
+              
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Account Size (£)</label>
+              <input type="number" value={calcAccount} onChange={(e) => setCalcAccount(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "12px" }} />
+
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Entry Price (£)</label>
+              <input type="number" value={calcEntry} onChange={(e) => setCalcEntry(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "12px" }} />
+
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>Stop Loss Price (£)</label>
+              <input type="number" value={calcStop} onChange={(e) => setCalcStop(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "16px" }} />
+
+              <div style={{ background: "#f0fdf4", padding: "16px", borderRadius: "6px", border: "1px solid #dcfce7" }}>
+                <div style={{ fontSize: "12px", color: "#65a30d", marginBottom: "8px" }}>Risk per trade: 2% of account</div>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "#166534", marginBottom: "12px" }}>Max Position: {positionSize} shares</div>
+                <div style={{ fontSize: "12px", color: "#166534" }}>Risk Amount: £{riskAmount}</div>
+              </div>
+            </div>
+
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>How It Works</div>
+              <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.8" }}>
+                <p style={{ marginBottom: "12px" }}>
+                  <strong>Position sizing</strong> is how many shares to buy based on your risk tolerance.
+                </p>
+                <p style={{ marginBottom: "12px" }}>
+                  <strong>Rule:</strong> Never risk more than 2% of your account per trade.
+                </p>
+                <p style={{ marginBottom: "12px" }}>
+                  <strong>Formula:</strong><br/>
+                  Position Size = (Account × 2%) ÷ (Entry - Stop Loss)
+                </p>
+                <p>
+                  <strong>Example:</strong> £10k account, buy at £150, stop at £140<br/>
+                  = (£10,000 × 2%) ÷ (£150 - £140)<br/>
+                  = £200 ÷ £10 = 20 shares
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {masterTab === "learn" && (
+          <div>
+            {selectedLesson ? (
+              <div style={{ background: "white", padding: "24px", borderRadius: "8px", border: "1px solid #e2e8f0", maxWidth: "800px" }}>
+                <button onClick={() => setSelectedLesson(null)} style={{ marginBottom: "16px", padding: "8px 16px", background: "#e0f2fe", color: "#1e5c7a", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>← Back</button>
+                <h2 style={{ fontSize: "24px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>{selectedLesson.title}</h2>
+                <p style={{ fontSize: "14px", lineHeight: "1.8", color: "#475569" }}>{selectedLesson.content}</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: "12px" }}>
+                {LESSONS.map((lesson, i) => (
+                  <button key={i} onClick={() => setSelectedLesson(lesson)} style={{ background: "white", border: "1px solid #e2e8f0", padding: "20px", borderRadius: "8px", cursor: "pointer", textAlign: "left", transition: "all 0.2s" }}>
+                    <div style={{ fontWeight: 700, color: "#1e5c7a" }}>{lesson.title}</div>
+                    <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "8px" }}>Click to learn →</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {masterTab === "leaderboard" && (
+          <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "#1e5c7a", marginBottom: "16px" }}>🏆 Global Rankings</div>
+            {[
+              { name: "You (Manual)", profit: manualGain, return: manualGainPercent, color: "#1e5c7a" },
+              { name: "🤖 AI Trader", profit: aiGain, return: aiGainPercent, color: "#6366f1" },
+              { name: "Game Player", profit: gameStarted ? gameGain : 0, return: gameStarted ? gameGainPercent : 0, color: "#ec4899" }
+            ].sort((a, b) => b.return - a.return).map((trader, i) => (
+              <div key={i} style={{ background: "#f8fafc", padding: "16px", borderRadius: "6px", border: "1px solid #e2e8f0", marginBottom: "8px", display: "flex", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: trader.color }}>#{i + 1} {trader.name}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontWeight: 700, color: trader.return > 0 ? "#10b981" : "#ef4444" }}>+{trader.return.toFixed(2)}%</div>
+                  <div style={{ fontSize: "12px", color: "#94a3b8" }}>£{trader.profit.toFixed(2)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {masterTab === "journal" && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+              <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>TOTAL TRADES</div>
+                <div style={{ fontSize: "24px", fontWeight: 700, color: "#1e5c7a" }}>{manualTrades.length}</div>
+              </div>
+              <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>WIN RATE</div>
+                <div style={{ fontSize: "24px", fontWeight: 700, color: "#10b981" }}>{manualAnalytics.winRate}%</div>
+              </div>
+              <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>BEST TRADE</div>
+                <div style={{ fontSize: "24px", fontWeight: 700, color: "#10b981" }}>£{manualAnalytics.bestTrade}</div>
+              </div>
+              <div style={{ background: "white", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>WORST TRADE</div>
+                <div style={{ fontSize: "24px", fontWeight: 700, color: "#ef4444" }}>£{manualAnalytics.worstTrade}</div>
+              </div>
+            </div>
+
+            <div style={{ background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e5c7a", marginBottom: "12px" }}>Recent Trades</div>
+              {manualTrades.length === 0 ? (
+                <div style={{ color: "#94a3b8", textAlign: "center", padding: "20px" }}>No trades yet</div>
+              ) : (
+                manualTrades.slice(-15).reverse().map(t => (
+                  <div key={t.id} style={{ background: "#f8fafc", padding: "10px", borderRadius: "4px", border: "1px solid #e2e8f0", marginBottom: "6px", fontSize: "12px", display: "flex", justifyContent: "space-between" }}>
+                    <span><span style={{ color: t.action === "BUY" ? "#10b981" : "#ef4444", fontWeight: 600 }}>{t.action}</span> {t.shares} {t.ticker} @ £{t.price.toFixed(2)}</span>
+                    {t.gainLoss !== undefined && <span style={{ color: t.gainLoss > 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>{t.gainLoss > 0 ? "+" : ""}£{t.gainLoss.toFixed(2)}</span>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<TradingPlatform />, document.getElementById('root'));
+  </script>
+</body>
+</html>

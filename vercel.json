@@ -1,0 +1,15 @@
+{
+  "buildCommand": "echo 'Static build'",
+  "devCommand": "python -m http.server 3000",
+  "public": "./",
+  "cleanUrls": true,
+  "env": {
+    "FINNHUB_KEY": "@finnhub_key"
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ]
+}

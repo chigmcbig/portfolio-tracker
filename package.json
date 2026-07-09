@@ -1,0 +1,23 @@
+{
+  "name": "trading-platform",
+  "version": "1.0.0",
+  "description": "Trading Platform Pro - Manual Trader, AI Auto-Investor, Game Mode",
+  "private": true,
+  "engines": {
+    "node": "18.x"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Static site - no build needed'",
+    "start": "echo 'Run with: vercel dev'"
+  },
+  "keywords": [
+    "trading",
+    "stocks",
+    "portfolio",
+    "game",
+    "simulator"
+  ],
+  "author": "chigmcbig",
+  "license": "MIT"
+}
