@@ -1,8 +1,5 @@
 {
   "buildCommand": "echo 'Static build'",
   "devCommand": "python -m http.server 3000",
-  "cleanUrls": true,
-  "env": {
-    "FINNHUB_KEY": "@finnhub_key"
-  }
+  "cleanUrls": true
 }
