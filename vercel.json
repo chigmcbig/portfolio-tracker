@@ -1,5 +1,4 @@
 {
-  "buildCommand": "echo 'Static build'",
-  "devCommand": "python -m http.server 3000",
-  "cleanUrls": true
+  "buildCommand": "echo 'Static site - no build needed'",
+  "devCommand": "python -m http.server 3000"
 }
